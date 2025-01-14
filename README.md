@@ -1,7 +1,7 @@
 - 👋 Hi, I’m @dapkor
 - 👀 I’m interested in ... ICT
 - 🌱 I’m currently learning ... a lot of bicep
-- 💞️ I’m looking to collaborate on ... Windows azure Code  
+- 💞️ I’m looking to collaborate on ... Powershell
 - 📫 How to reach me ... @GMail
 
 <!---
