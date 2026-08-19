@@ -21,7 +21,7 @@
 
 ### ⚡ Focus & Specs
 
-* 👥 **People & Leadership:** Empowering high-performing teams, technical mentorship & boosting Developer Experience (DevEx)
+* 👥 **People & Leadership:** Empowering teams, technical mentorship & boosting Developer Experience (DevEx)
 * 🎯 **Specialization:** Hybrid Cloud Infrastructure, DevOps , Declarative IaC
 * 🛡️ **Security Core:** Enterprise IAM Governance & Zero-Trust Architecture
 * 🔄 **Reliability Target:** Mission-Critical & Zero-Downtime Workloads (High Availability)
