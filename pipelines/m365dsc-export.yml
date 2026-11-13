@@ -1,0 +1,91 @@
+# Azure DevOps pipeline: nachtelijke Microsoft365DSC-export per klant-tenant naar een eigen branch.
+#
+# Voorwaarden (eenmalig):
+#  - Service connection (Azure Resource Manager, Workload Identity Federation) met de rol
+#    'Key Vault Secrets User' op de MSP Key Vault.
+#  - Project Settings > Repositories > <doelrepo> > Security > '<Project> Build Service':
+#    Contribute = Allow, Create branch = Allow.  (geen Bypass policies!)
+#  - Per tenant: New-M365DSCAppRegistration.ps1 gedraaid; output hieronder in 'tenants' zetten.
+
+trigger: none
+pr: none
+
+schedules:
+  - cron: '0 2 * * *'          # 02:00 UTC dagelijks
+    displayName: Nightly M365DSC export
+    branches: { include: [ main ] }
+    always: true
+
+parameters:
+  - name: tenants
+    type: object
+    default:
+      - name: contoso
+        tenantDomain: contoso.onmicrosoft.com
+        applicationId: 00000000-0000-0000-0000-000000000000
+        certificateName: m365dsc-contoso-onmicrosoft-com
+        branch: tenant/contoso
+        workloads: AAD,EXO,INTUNE,SPO,TEAMS,SC,OD,O365
+
+variables:
+  azureServiceConnection: 'sc-msp-m365dsc-keyvault'          # naam service connection
+  keyVaultName: 'kv-msp-m365dsc'
+  targetRepoUrl: 'https://dev.azure.com/<org>/<project>/_git/m365dsc-config'
+  m365dscVersion: ''                                         # aanbevolen: vastpinnen, bv. 1.25.x
+
+jobs:
+  - ${{ each t in parameters.tenants }}:
+    - job: export_${{ replace(t.name, '-', '_') }}
+      displayName: 'M365DSC export – ${{ t.tenantDomain }}'
+      pool:
+        vmImage: windows-latest          # Windows PowerShell 5.1
+      timeoutInMinutes: 180
+      steps:
+        - checkout: self                 # bevat scripts/Export-M365DSCToRepo.ps1
+
+        - task: AzureKeyVault@2
+          displayName: Certificaat ophalen uit Key Vault
+          inputs:
+            azureSubscription: $(azureServiceConnection)
+            KeyVaultName: $(keyVaultName)
+            SecretsFilter: ${{ t.certificateName }}
+            RunAsPreJob: false
+
+        - powershell: |
+            $ErrorActionPreference = 'Stop'
+            $bytes = [Convert]::FromBase64String($env:CERT_B64)
+            $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]'UserKeySet,PersistKeySet'
+            $cert  = New-Object Security.Cryptography.X509Certificates.X509Certificate2($bytes, '', $flags)
+            $store = New-Object Security.Cryptography.X509Certificates.X509Store('My','CurrentUser')
+            $store.Open('ReadWrite'); $store.Add($cert); $store.Close()
+            Write-Host "##vso[task.setvariable variable=CertThumbprint]$($cert.Thumbprint)"
+          displayName: Certificaat importeren (CurrentUser\My)
+          env:
+            CERT_B64: $(${{ t.certificateName }})
+
+        - powershell: |
+            & "$(Build.SourcesDirectory)\scripts\Export-M365DSCToRepo.ps1" `
+              -TenantDomain          '${{ t.tenantDomain }}' `
+              -ApplicationId         '${{ t.applicationId }}' `
+              -CertificateThumbprint '$(CertThumbprint)' `
+              -RepoUrl               '$(targetRepoUrl)' `
+              -Branch                '${{ t.branch }}' `
+              -LocalRepoPath         '$(Agent.TempDirectory)\m365dsc-repo' `
+              -Workloads             ('${{ t.workloads }}' -split ',') `
+              -M365DSCVersion        '$(m365dscVersion)' `
+              -GitPatEnvVar          'SYSTEM_ACCESSTOKEN' `
+              -GitAuthScheme         'Bearer' `
+              -GitUserName           'M365DSC Pipeline' `
+              -GitUserEmail          'm365dsc-pipeline@noreply.local'
+          displayName: Export & push naar ${{ t.branch }}
+          env:
+            SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+        - powershell: |
+            if ($env:THUMB) {
+              Get-ChildItem Cert:\CurrentUser\My | Where-Object Thumbprint -eq $env:THUMB | Remove-Item -DeleteKey -Force
+            }
+          displayName: Certificaat opruimen
+          condition: always()
+          env:
+            THUMB: $(CertThumbprint)

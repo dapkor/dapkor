@@ -33,7 +33,9 @@ param(
     [string] $ExportSubFolder = '',                           # leeg = <TenantDomain>
     [string] $GitUserName     = 'M365DSC Export',
     [string] $GitUserEmail    = 'm365dsc-export@noreply.local',
-    [string] $GitPatEnvVar    = 'M365DSC_GIT_PAT',            # optioneel: naam van env-var met PAT (HTTPS)
+    [string] $GitPatEnvVar    = 'M365DSC_GIT_PAT',            # optioneel: naam van env-var met PAT / System.AccessToken
+    [ValidateSet('Basic','Bearer')]
+    [string] $GitAuthScheme   = 'Basic',                      # Basic = PAT, Bearer = Azure DevOps System.AccessToken
 
     # ===================== EXPORT =====================
     [ValidateSet('AAD','EXO','INTUNE','O365','OD','PLANNER','PP','SC','SPO','TEAMS')]
@@ -86,8 +88,12 @@ $pat = [Environment]::GetEnvironmentVariable($GitPatEnvVar)
 $gitAuthArgs = @()
 if ($pat -and $RepoUrl -like 'https://*') {
     # PAT via HTTP-header i.p.v. in de URL -> komt niet in .git/config of logs terecht
-    $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("pat:$pat"))
-    $gitAuthArgs = @('-c', "http.extraHeader=Authorization: Basic $b64")
+    if ($GitAuthScheme -eq 'Bearer') {
+        $gitAuthArgs = @('-c', "http.extraHeader=Authorization: Bearer $pat")
+    } else {
+        $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("pat:$pat"))
+        $gitAuthArgs = @('-c', "http.extraHeader=Authorization: Basic $b64")
+    }
 }
 
 if (-not (Test-Path (Join-Path $LocalRepoPath '.git'))) {
